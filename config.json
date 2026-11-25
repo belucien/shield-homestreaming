@@ -1,0 +1,38 @@
+{
+  "weather": {
+    "label": "Rancho Cucamonga",
+    "zip": "91730",
+    "latitude": 34.0975,
+    "longitude": -117.581,
+    "timezone": "America/Los_Angeles",
+    "units": "fahrenheit"
+  },
+  "region": "US",
+  "language": "en-US",
+  "output_width": 3840,
+  "output_height": 2160,
+  "jpeg_quality": 88,
+  "mix": {
+    "new_streaming_movies": 6,
+    "trending_tv": 6,
+    "trending_movies": 4,
+    "in_theaters": 4
+  },
+  "my_services": [
+    "Hulu",
+    "Disney Plus",
+    "Apple TV",
+    "Apple TV Plus",
+    "Amazon Prime Video",
+    "Peacock",
+    "Peacock Premium",
+    "Peacock Premium Plus",
+    "ESPN Plus",
+    "YouTube Premium",
+    "Netflix",
+    "Max",
+    "HBO Max",
+    "Paramount Plus"
+  ],
+  "min_votes_for_rating": 20
+}
