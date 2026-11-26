@@ -551,7 +551,7 @@ def render_wallpaper(item, backdrop, logo, wx, cfg, now):
     f_badge = c.font("Inter-SemiBold.otf", 15)
     track = c.px(2.4)
     bw = tracked_width(d, item["badge"], f_badge, track)
-    by = c.px(318)
+    by = c.px(296)
     pad_x, pad_y = c.px(14), c.px(8)
     d.rounded_rectangle((x, by, x + bw + pad_x * 2, by + c.px(17) + pad_y * 2),
                         radius=c.px(6), fill=(255, 255, 255, 38),
@@ -560,7 +560,7 @@ def render_wallpaper(item, backdrop, logo, wx, cfg, now):
                  (255, 255, 255, 235), track)
 
     # logo or title text
-    top = c.px(370)
+    top = c.px(346)
     max_w, max_h = c.px(560), c.px(150)
     if logo is not None:
         lg = logo_fit(logo, max_w, max_h)
@@ -626,7 +626,7 @@ def render_wallpaper(item, backdrop, logo, wx, cfg, now):
 
     # call to action: "Watch on Stremio" / "Premieres Fri 12/05"
     if item.get("cta"):
-        y += c.px(26)
+        y += c.px(20)
         f_p = c.font("Inter-SemiBold.otf", 20)
         ic = c.px(18)
         iy = y + c.px(5)
