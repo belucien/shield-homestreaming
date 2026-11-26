@@ -13,10 +13,11 @@
   "output_height": 2160,
   "jpeg_quality": 88,
   "mix": {
-    "just_aired_tv": 6,
-    "new_movies": 5,
-    "upcoming_tv": 5,
-    "upcoming_movies": 5
+    "new_tv": 5,
+    "upcoming_tv": 4,
+    "new_movies": 4,
+    "upcoming_movies": 4,
+    "trending_movies": 4
   },
   "min_votes_for_rating": 20,
   "watch_label": "Stremio",

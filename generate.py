@@ -86,12 +86,12 @@ class TMDB:
             p.setdefault("with_original_language", "|".join(self.languages))
         return self.get(f"/discover/{kind}", **p)["results"]
 
-    def just_aired_tv(self):
-        """Series with a new episode in the last 7 days."""
+    def new_tv(self):
+        """Brand-new series that premiered in the last 30 days."""
         t = dt.date.today()
         return self._discover("tv", without_genres=self.NOT_SHOWS, **{
-            "air_date.gte": str(t - dt.timedelta(days=7)), "air_date.lte": str(t),
-            "vote_count.gte": 25})
+            "first_air_date.gte": str(t - dt.timedelta(days=30)),
+            "first_air_date.lte": str(t)})
 
     def upcoming_tv(self):
         """Brand-new series premiering in the next 60 days."""
@@ -113,6 +113,10 @@ class TMDB:
         return self._discover("movie", region=self.region, with_release_type="4", **{
             "release_date.gte": str(t - dt.timedelta(days=60)), "release_date.lte": str(t),
             "vote_count.gte": 10})
+
+    def trending_movies(self):
+        """TMDB's Trending This Week catalogue (movies)."""
+        return self.get("/trending/movie/week")["results"]
 
     def details(self, kind, tmdb_id):
         return self.get(
@@ -152,9 +156,9 @@ def get_weather(cfg):
     params = {
         "latitude": w["latitude"], "longitude": w["longitude"],
         "current": "temperature_2m,apparent_temperature,weather_code,is_day",
-        "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
         "temperature_unit": w.get("units", "fahrenheit"),
-        "timezone": w["timezone"], "forecast_days": 1,
+        "timezone": w["timezone"], "forecast_days": 7,
     }
     r = http().get("https://api.open-meteo.com/v1/forecast", params=params, timeout=20)
     r.raise_for_status()
@@ -172,6 +176,14 @@ def get_weather(cfg):
         "low": round(daily["temperature_2m_min"][0]),
         "rain": daily.get("precipitation_probability_max", [None])[0],
         "desc": desc, "icon": icon, "label": w.get("label", ""),
+        "days": [
+            {"dow": dt.date.fromisoformat(day).strftime("%a").upper(),
+             "icon": WMO.get(int(code), ("", "cloud"))[1],
+             "hi": round(hi), "lo": round(lo)}
+            for day, code, hi, lo in zip(daily["time"], daily["weather_code"],
+                                         daily["temperature_2m_max"],
+                                         daily["temperature_2m_min"])
+        ],
     }
 
 
@@ -182,13 +194,15 @@ def get_weather(cfg):
 def pick_titles(tmdb, cfg):
     mix = cfg["mix"]
     buckets = []
+    # (config key, kind, badge, fetch, allowed days from today: (min, max) or None)
     sources = [
-        ("just_aired_tv", "tv", "NEW EPISODE", tmdb.just_aired_tv),
-        ("new_movies", "movie", "NEW MOVIE", tmdb.new_movies),
-        ("upcoming_tv", "tv", "NEW SERIES", tmdb.upcoming_tv),
-        ("upcoming_movies", "movie", "COMING SOON", tmdb.upcoming_movies),
+        ("new_tv", "tv", "NEW SERIES", tmdb.new_tv, (-30, 0)),
+        ("new_movies", "movie", "NEW MOVIE", tmdb.new_movies, (-365, 0)),
+        ("upcoming_tv", "tv", "UPCOMING SERIES", tmdb.upcoming_tv, (1, 120)),
+        ("upcoming_movies", "movie", "COMING SOON", tmdb.upcoming_movies, (1, 180)),
+        ("trending_movies", "movie", "TRENDING", tmdb.trending_movies, (-365, 180)),
     ]
-    for key, kind, badge, fn in sources:
+    for key, kind, badge, fn, window in sources:
         n = int(mix.get(key, 0))
         if n <= 0:
             continue
@@ -197,13 +211,16 @@ def pick_titles(tmdb, cfg):
         except Exception as e:  # keep going if one list fails
             print(f"! list {key} failed: {e}", file=sys.stderr)
             results = []
-        today = str(dt.date.today())
+        today = dt.date.today()
 
-        def ok_date(r):
-            d = r.get("release_date") or r.get("first_air_date") or ""
-            if badge in ("NEW SERIES", "COMING SOON"):   # must not be out yet
-                return d > today
-            return bool(d) and d <= today                  # must already be out
+        def ok_date(r, window=window):
+            # judge by the title's ORIGINAL release date, so re-releases and
+            # old shows never show up as "new" or "coming soon"
+            try:
+                d = dt.date.fromisoformat(r.get("release_date") or r.get("first_air_date") or "")
+            except ValueError:
+                return False
+            return window[0] <= (d - today).days <= window[1]
 
         items = [(kind, r, badge) for r in results if r.get("backdrop_path")
                  and r.get("overview") and not r.get("adult") and ok_date(r)]
@@ -266,14 +283,12 @@ def build_item(tmdb, cfg, kind, tmdb_id, badge):
     # call-to-action line under the description
     watch = cfg.get("watch_label", "Stremio")
     cta, cta_icon = f"Watch on {watch}", "play"
-    if badge == "NEW EPISODE":
-        ep = d.get("last_episode_to_air") or {}
-        if ep.get("season_number") is not None and ep.get("air_date"):
-            cta = (f"S{ep['season_number']} E{ep.get('episode_number', '?')} aired "
-                   f"{nice_date(ep['air_date'])}  ·  Watch on {watch}")
-    elif badge == "NEW SERIES":
+    future = date > str(dt.date.today())
+    if badge == "NEW SERIES":
+        cta = f"Premiered {nice_date(date)}  ·  Watch on {watch}"
+    elif badge == "UPCOMING SERIES" or (kind == "tv" and future):
         cta, cta_icon = f"Premieres {nice_date(date)}", "calendar"
-    elif badge == "COMING SOON":
+    elif future:  # coming soon / trending but not out yet
         cta, cta_icon = f"In theaters {nice_date(date)}", "calendar"
 
     images = d.get("images", {})
@@ -474,6 +489,30 @@ def render_weather(img, c, wx, now):
     f3 = c.font("Inter-Medium.otf", 15)
     stamp = f"{wx['label'].upper()}  ·  UPDATED {now.strftime('%-I:%M %p')}"
     draw_tracked(d, (x0 + c.px(2), y0 + c.px(76)), stamp, f3, (255, 255, 255, 120), c.px(1.5))
+
+    # 7-day forecast strip
+    days = wx.get("days") or []
+    if days:
+        col = c.px(66)
+        fy = y0 + c.px(112)
+        f_dow = c.font("Inter-SemiBold.otf", 13)
+        f_hi = c.font("Inter-SemiBold.otf", 16)
+        f_lo = c.font("Inter-Regular.otf", 16)
+        for i, day in enumerate(days[:7]):
+            cx = x0 + i * col + col // 2
+            label = "TODAY" if i == 0 else day["dow"]
+            alpha = 235 if i == 0 else 170
+            lw = tracked_width(d, label, f_dow, c.px(1))
+            draw_tracked(d, (cx - lw / 2, fy), label, f_dow, (255, 255, 255, alpha), c.px(1))
+            draw_weather_icon(layer, cx, fy + c.px(40), c.px(15), day["icon"])
+            hi, lo = f"{day['hi']}°", f"{day['lo']}°"
+            d.text((cx - d.textlength(hi, font=f_hi) / 2, fy + c.px(62)), hi, font=f_hi,
+                   fill=(255, 255, 255, 235))
+            d.text((cx - d.textlength(lo, font=f_lo) / 2, fy + c.px(82)), lo, font=f_lo,
+                   fill=(255, 255, 255, 140))
+        # thin divider between today and the week
+        d.line((x0 + col, fy + c.px(2), x0 + col, fy + c.px(100)), fill=(255, 255, 255, 50),
+               width=max(1, c.px(1)))
     img.paste(layer, (0, 0), layer)
 
 
@@ -512,7 +551,7 @@ def render_wallpaper(item, backdrop, logo, wx, cfg, now):
     f_badge = c.font("Inter-SemiBold.otf", 15)
     track = c.px(2.4)
     bw = tracked_width(d, item["badge"], f_badge, track)
-    by = c.px(262)
+    by = c.px(318)
     pad_x, pad_y = c.px(14), c.px(8)
     d.rounded_rectangle((x, by, x + bw + pad_x * 2, by + c.px(17) + pad_y * 2),
                         radius=c.px(6), fill=(255, 255, 255, 38),
@@ -521,8 +560,8 @@ def render_wallpaper(item, backdrop, logo, wx, cfg, now):
                  (255, 255, 255, 235), track)
 
     # logo or title text
-    top = c.px(318)
-    max_w, max_h = c.px(600), c.px(165)
+    top = c.px(370)
+    max_w, max_h = c.px(560), c.px(150)
     if logo is not None:
         lg = logo_fit(logo, max_w, max_h)
         # soft shadow under the logo
@@ -579,7 +618,7 @@ def render_wallpaper(item, backdrop, logo, wx, cfg, now):
     # overview
     y += c.px(52)
     f_ov = c.font("Inter-Regular.otf", 23)
-    lines = wrap(d, item["overview"], f_ov, c.px(780), 4)
+    lines = wrap(d, item["overview"], f_ov, c.px(780), 3)
     lh = c.px(35)
     for i, ln in enumerate(lines):
         d.text((x, y + i * lh), ln, font=f_ov, fill=(255, 255, 255, 200))
@@ -679,7 +718,11 @@ def main():
 
     if args.demo:
         wx = {"temp": 68, "feels": 67, "high": 72, "low": 48, "rain": 0, "desc": "Sunny",
-              "icon": "sun", "label": cfg["weather"]["label"]}
+              "icon": "sun", "label": cfg["weather"]["label"],
+              "days": [{"dow": d, "icon": i, "hi": h, "lo": l} for d, i, h, l in [
+                  ("WED", "sun", 72, 48), ("THU", "partly", 70, 47), ("FRI", "cloud", 66, 46),
+                  ("SAT", "rain", 61, 45), ("SUN", "partly", 64, 44), ("MON", "sun", 69, 46),
+                  ("TUE", "sun", 73, 49)]]}
         items = demo_items()
     else:
         key = os.environ.get("TMDB_API_KEY", "")

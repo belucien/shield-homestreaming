@@ -2,8 +2,8 @@
 
 An ad-free, cinematic home screen for the NVIDIA Shield using **Projectivy Launcher (Premium)**.
 
-- **Carousel:** about 20 titles for Stremio: series with a new episode this week, brand-new series premiering soon, movies coming soon, and new movies out on digital. Refreshed every 30 minutes. Each one shows its backdrop, logo, year, rating, runtime, genres, a short description, and "Watch on Stremio" or its premiere date.
-- **Weather:** live conditions for Rancho Cucamonga (91730), with the high, low, and chance of rain, built into each wallpaper.
+- **Carousel:** about 21 titles for Stremio: brand-new series (premiered in the last 30 days), upcoming series, new movies out on digital, upcoming movies, and TMDB's trending movies. Refreshed every 30 minutes. Each one shows its backdrop, logo, year, rating, runtime, genres, a short description, and "Watch on Stremio" or its premiere date.
+- **Weather:** live conditions and a 7-day forecast for Rancho Cucamonga (91730), built into each wallpaper.
 - **Clock and date:** Projectivy's own clock, so it's always exact, e.g. `1:05` over `WEDNESDAY 11/25`.
 - **Apps:** your streaming apps in a single dock along the bottom.
 
@@ -94,7 +94,7 @@ Edit `config.json` in the repo. Saving the change on GitHub rebuilds the wallpap
 | Setting | What it does |
 | --- | --- |
 | `weather` | Location (lat/long), city label, `fahrenheit`/`celsius` |
-| `mix` | How many of each kind: `just_aired_tv`, `new_movies`, `upcoming_tv`, `upcoming_movies` |
+| `mix` | How many of each kind: `new_tv`, `upcoming_tv`, `new_movies`, `upcoming_movies`, `trending_movies` |
 | `watch_label` | The app named in "Watch on …" (Stremio) |
 | `original_languages` | Limit to these languages, e.g. `["en"]`; use `[]` for all (anime, K-drama…) |
 | `output_width/height` | 3840×2160 by default. Use 1920×1080 if your TV is 1080p, for smaller files |
