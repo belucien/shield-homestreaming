@@ -197,8 +197,16 @@ def pick_titles(tmdb, cfg):
         except Exception as e:  # keep going if one list fails
             print(f"! list {key} failed: {e}", file=sys.stderr)
             results = []
+        today = str(dt.date.today())
+
+        def ok_date(r):
+            d = r.get("release_date") or r.get("first_air_date") or ""
+            if badge in ("NEW SERIES", "COMING SOON"):   # must not be out yet
+                return d > today
+            return bool(d) and d <= today                  # must already be out
+
         items = [(kind, r, badge) for r in results if r.get("backdrop_path")
-                 and r.get("overview") and not r.get("adult")]
+                 and r.get("overview") and not r.get("adult") and ok_date(r)]
         buckets.append((n, items))
 
     # interleave buckets so movies / shows alternate, skipping duplicates
