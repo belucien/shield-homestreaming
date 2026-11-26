@@ -103,7 +103,7 @@ To refresh right away: **Actions → Update wallpapers → Run workflow**.
 
 ## Good to know
 
-- **How current is the weather?** It's regenerated every 30 minutes, and the Shield reloads the list about once an hour, so expect it to be up to about an hour behind. The "UPDATED" time on screen tells you exactly how old it is. The clock is always exact because Projectivy draws it.
+- **How current is the weather?** It's regenerated every 30 minutes, and the Shield reloads the list about once an hour, so expect it to be up to about an hour behind. The clock is always exact because Projectivy draws it.
 - **Arrows:** Projectivy rotates wallpapers on its own timer. You can't flip through them with the remote.
 - **Paused schedule:** GitHub pauses scheduled jobs in public repos after 60 days with no commits, and emails you first. Click **Enable workflow** in the Actions tab, or make any small edit, to restart it.
 - **Run your own copy offline:** `pip install -r requirements.txt && python generate.py --demo --out site` renders sample wallpapers without any keys.

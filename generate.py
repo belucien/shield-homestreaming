@@ -487,7 +487,7 @@ def render_weather(img, c, wx, now):
         sub += f"  ·  {wx['rain']}% rain"
     d.text((tx2, y0 + c.px(34)), sub, font=f2, fill=(255, 255, 255, 190))
     f3 = c.font("Inter-Medium.otf", 15)
-    stamp = f"{wx['label'].upper()}  ·  UPDATED {now.strftime('%-I:%M %p')}"
+    stamp = wx['label'].upper()
     draw_tracked(d, (x0 + c.px(2), y0 + c.px(76)), stamp, f3, (255, 255, 255, 120), c.px(1.5))
 
     # 7-day forecast strip
