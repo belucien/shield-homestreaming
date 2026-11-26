@@ -13,26 +13,14 @@
   "output_height": 2160,
   "jpeg_quality": 88,
   "mix": {
-    "new_streaming_movies": 6,
-    "trending_tv": 6,
-    "trending_movies": 4,
-    "in_theaters": 4
+    "just_aired_tv": 6,
+    "new_movies": 5,
+    "upcoming_tv": 5,
+    "upcoming_movies": 5
   },
-  "my_services": [
-    "Hulu",
-    "Disney Plus",
-    "Apple TV",
-    "Apple TV Plus",
-    "Amazon Prime Video",
-    "Peacock",
-    "Peacock Premium",
-    "Peacock Premium Plus",
-    "ESPN Plus",
-    "YouTube Premium",
-    "Netflix",
-    "Max",
-    "HBO Max",
-    "Paramount Plus"
-  ],
-  "min_votes_for_rating": 20
+  "min_votes_for_rating": 20,
+  "watch_label": "Stremio",
+  "original_languages": [
+    "en"
+  ]
 }

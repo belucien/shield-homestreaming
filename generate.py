@@ -2,9 +2,11 @@
 """
 Shield Carousel - wallpaper generator for Projectivy Launcher (Overflight plugin).
 
-Pulls new + trending movies and TV shows from TMDB, current weather from
+Pulls just-aired episodes, upcoming series, upcoming movies and new
+movies from TMDB, current weather from
 Open-Meteo, and renders each title as a 4K wallpaper with logo, year, rating,
-runtime, genres, overview, where to stream it, and the current weather.
+runtime, genres, overview, "Watch on Stremio" / premiere date, and the
+current weather.
 Writes everything plus an overflight.json feed into the output folder.
 
 Usage:
@@ -61,6 +63,7 @@ class TMDB:
         self.region = region
         # v4 "API Read Access Token" is a long JWT; v3 "API Key" is 32 hex chars
         self.bearer = self.key.startswith("eyJ") or len(self.key) > 40
+        self.languages = []
 
     def get(self, path, **params):
         params.setdefault("language", self.language)
@@ -74,28 +77,47 @@ class TMDB:
         return r.json()
 
     # ---- lists -----------------------------------------------------------
-    def new_streaming_movies(self):
-        today = dt.date.today()
-        return self.get(
-            "/discover/movie",
-            sort_by="popularity.desc",
-            watch_region=self.region,
-            with_watch_monetization_types="flatrate",
-            **{"primary_release_date.gte": str(today - dt.timedelta(days=120)),
-               "primary_release_date.lte": str(today)},
-            include_adult="false",
-        )["results"]
+    NOT_SHOWS = "10763|10764|10766|10767"  # news, reality, soap, talk
 
-    def trending(self, kind):
-        return self.get(f"/trending/{kind}/week")["results"]
+    def _discover(self, kind, **p):
+        p.setdefault("include_adult", "false")
+        p.setdefault("sort_by", "popularity.desc")
+        if self.languages:
+            p.setdefault("with_original_language", "|".join(self.languages))
+        return self.get(f"/discover/{kind}", **p)["results"]
 
-    def in_theaters(self):
-        return self.get("/movie/now_playing", region=self.region)["results"]
+    def just_aired_tv(self):
+        """Series with a new episode in the last 7 days."""
+        t = dt.date.today()
+        return self._discover("tv", without_genres=self.NOT_SHOWS, **{
+            "air_date.gte": str(t - dt.timedelta(days=7)), "air_date.lte": str(t),
+            "vote_count.gte": 25})
+
+    def upcoming_tv(self):
+        """Brand-new series premiering in the next 60 days."""
+        t = dt.date.today()
+        return self._discover("tv", without_genres=self.NOT_SHOWS, **{
+            "first_air_date.gte": str(t + dt.timedelta(days=1)),
+            "first_air_date.lte": str(t + dt.timedelta(days=60))})
+
+    def upcoming_movies(self):
+        """Movies opening in the next 90 days."""
+        t = dt.date.today()
+        return self._discover("movie", region=self.region, with_release_type="2|3", **{
+            "release_date.gte": str(t + dt.timedelta(days=1)),
+            "release_date.lte": str(t + dt.timedelta(days=90))})
+
+    def new_movies(self):
+        """Movies that came out on digital in the last 60 days (ready to stream)."""
+        t = dt.date.today()
+        return self._discover("movie", region=self.region, with_release_type="4", **{
+            "release_date.gte": str(t - dt.timedelta(days=60)), "release_date.lte": str(t),
+            "vote_count.gte": 10})
 
     def details(self, kind, tmdb_id):
         return self.get(
             f"/{kind}/{tmdb_id}",
-            append_to_response="images,watch/providers",
+            append_to_response="images",
             include_image_language="en,null",
         )
 
@@ -161,10 +183,10 @@ def pick_titles(tmdb, cfg):
     mix = cfg["mix"]
     buckets = []
     sources = [
-        ("new_streaming_movies", "movie", "NEW TO STREAMING", tmdb.new_streaming_movies),
-        ("trending_tv", "tv", "TRENDING SERIES", lambda: tmdb.trending("tv")),
-        ("trending_movies", "movie", "TRENDING MOVIE", lambda: tmdb.trending("movie")),
-        ("in_theaters", "movie", "NOW IN THEATERS", tmdb.in_theaters),
+        ("just_aired_tv", "tv", "NEW EPISODE", tmdb.just_aired_tv),
+        ("new_movies", "movie", "NEW MOVIE", tmdb.new_movies),
+        ("upcoming_tv", "tv", "NEW SERIES", tmdb.upcoming_tv),
+        ("upcoming_movies", "movie", "COMING SOON", tmdb.upcoming_movies),
     ]
     for key, kind, badge, fn in sources:
         n = int(mix.get(key, 0))
@@ -233,34 +255,34 @@ def build_item(tmdb, cfg, kind, tmdb_id, badge):
     votes = d.get("vote_count") or 0
     rating_str = f"{rating:.1f}" if votes >= cfg.get("min_votes_for_rating", 20) and rating else ""
 
-    # where to watch (TMDB watch-provider data is powered by JustWatch)
-    provider = ""
-    prov = (d.get("watch/providers") or {}).get("results", {}).get(cfg["region"], {})
-    mine = [s.lower() for s in cfg.get("my_services", [])]
-    for p in prov.get("flatrate", []) or []:
-        if p["provider_name"].lower() in mine:
-            provider = pretty_provider(p["provider_name"])
-            break
-    if not provider and badge == "NOW IN THEATERS":
-        provider = "In Theaters"
+    # call-to-action line under the description
+    watch = cfg.get("watch_label", "Stremio")
+    cta, cta_icon = f"Watch on {watch}", "play"
+    if badge == "NEW EPISODE":
+        ep = d.get("last_episode_to_air") or {}
+        if ep.get("season_number") is not None and ep.get("air_date"):
+            cta = (f"S{ep['season_number']} E{ep.get('episode_number', '?')} aired "
+                   f"{nice_date(ep['air_date'])}  ·  Watch on {watch}")
+    elif badge == "NEW SERIES":
+        cta, cta_icon = f"Premieres {nice_date(date)}", "calendar"
+    elif badge == "COMING SOON":
+        cta, cta_icon = f"In theaters {nice_date(date)}", "calendar"
 
     images = d.get("images", {})
     return {
         "kind": kind, "id": tmdb_id, "badge": badge, "title": title, "year": year,
         "rating": rating_str, "length": length, "genres": genres,
-        "overview": d.get("overview", ""), "provider": provider,
+        "overview": d.get("overview", ""), "cta": cta, "cta_icon": cta_icon,
         "backdrop": f"{TMDB_IMG}/original{best_backdrop(images, d.get('backdrop_path'))}",
         "logo": (f"{TMDB_IMG}/w780{best_logo(images)}" if best_logo(images) else None),
     }
 
 
-def pretty_provider(name):
-    return {
-        "Disney Plus": "Disney+", "Apple TV Plus": "Apple TV", "Apple TV": "Apple TV",
-        "Amazon Prime Video": "Prime Video", "Peacock Premium": "Peacock",
-        "Peacock Premium Plus": "Peacock", "ESPN Plus": "ESPN+",
-        "Paramount Plus": "Paramount+", "YouTube Premium": "YouTube",
-    }.get(name, name)
+def nice_date(iso):
+    try:
+        return dt.date.fromisoformat(iso).strftime("%a %m/%d")
+    except Exception:
+        return iso
 
 
 # --------------------------------------------------------------------------
@@ -492,7 +514,7 @@ def render_wallpaper(item, backdrop, logo, wx, cfg, now):
 
     # logo or title text
     top = c.px(318)
-    max_w, max_h = c.px(700), c.px(190)
+    max_w, max_h = c.px(600), c.px(165)
     if logo is not None:
         lg = logo_fit(logo, max_w, max_h)
         # soft shadow under the logo
@@ -555,15 +577,21 @@ def render_wallpaper(item, backdrop, logo, wx, cfg, now):
         d.text((x, y + i * lh), ln, font=f_ov, fill=(255, 255, 255, 200))
     y += lh * len(lines)
 
-    # where to watch
-    if item["provider"]:
+    # call to action: "Watch on Stremio" / "Premieres Fri 12/05"
+    if item.get("cta"):
         y += c.px(26)
         f_p = c.font("Inter-SemiBold.otf", 20)
-        label = item["provider"] if item["provider"] == "In Theaters" else f"Watch on {item['provider']}"
-        tri = c.px(11)
-        d.polygon([(x, y + c.px(6)), (x, y + c.px(6) + tri * 1.6), (x + tri * 1.35, y + c.px(6) + tri * .8)],
-                  fill=(255, 255, 255, 235))
-        d.text((x + tri * 1.35 + c.px(12), y + c.px(1)), label, font=f_p, fill=(255, 255, 255, 235))
+        ic = c.px(18)
+        iy = y + c.px(5)
+        if item.get("cta_icon") == "calendar":
+            d.rounded_rectangle((x, iy, x + ic, iy + ic), radius=c.px(3),
+                                outline=(255, 255, 255, 235), width=max(2, c.px(2)))
+            d.rectangle((x, iy, x + ic, iy + c.px(5)), fill=(255, 255, 255, 235))
+        else:
+            tri = c.px(11)
+            d.polygon([(x, iy + c.px(1)), (x, iy + c.px(1) + tri * 1.6),
+                       (x + tri * 1.35, iy + c.px(1) + tri * .8)], fill=(255, 255, 255, 235))
+        d.text((x + ic + c.px(12), y + c.px(1)), item["cta"], font=f_p, fill=(255, 255, 255, 235))
 
     # small attribution in the corner (TMDB terms)
     f_att = c.font("Inter-Regular.otf", 11)
@@ -588,12 +616,12 @@ def demo_items():
                      "times. The town needs protection from bandits, so the samurai gathers six "
                      "others to help him teach the people how to defend themselves, and the "
                      "villagers provide the soldiers with food."),
-        "provider": "Prime Video", "backdrop": str(ROOT / "demo" / "sample.png"), "logo": None,
+        "cta": "Watch on Stremio", "cta_icon": "play", "backdrop": str(ROOT / "demo" / "sample.png"), "logo": None,
     }
-    tv = dict(base, kind="tv", id=1, badge="TRENDING SERIES", title="The Long Valley",
+    tv = dict(base, kind="tv", id=1, title="The Long Valley",
               year="2026", rating="8.1", length="2 Seasons", genres=["Drama", "Mystery"],
-              overview="A demo entry showing how a TV series looks, with its season count and "
-                       "the streaming service it is on.", provider="Hulu")
+              overview="A demo entry showing how a new series looks before it premieres.",
+              badge="NEW SERIES", cta="Premieres Fri 12/05", cta_icon="calendar")
     return [base, tv]
 
 
@@ -650,6 +678,7 @@ def main():
         if not key:
             sys.exit("TMDB_API_KEY is not set")
         tmdb = TMDB(key, cfg["language"], cfg["region"])
+        tmdb.languages = cfg.get("original_languages", [])
         try:
             wx = get_weather(cfg)
         except Exception as e:
